@@ -1,3 +1,21 @@
 {
-  "apps": []
+  "apps": [
+    {
+      "id": "htmlxeditor",
+      "name": "htmlxeditor",
+      "desc": "HTMLxEditor é uma IDE Web poderosa que coloca o desenvolvimento Web completo na palma da sua mão. Crie, edite, execute, colabore, versione e publique os seus projetos diretamente pelo telemóvel.",
+      "category": "Ferramentas",
+      "repo": "adilson889/htmlxeditor",
+      "tag": "v1.0.1_alfa",
+      "commit": "d6c50f45ce1dd4064437db77420c9e8f4401bcb1",
+      "apk": "https://github.com/adilson889/htmlxeditor/releases/download/v1.0.1_alfa/htmlxeditor_v1.0.1_alfa.apk",
+      "asset_id": "544292307",
+      "sha256": "8f43b16dc1a78ac373f749ef4e0fb39e6da5a4046316bd7328d8666d4f7a84c5",
+      "cert": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+      "owner": "adilson889",
+      "c1": "#455A0A",
+      "c2": "#A3B35C",
+      "updated": "2026-10-25"
+    }
+  ]
 }
