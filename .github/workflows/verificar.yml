@@ -1,0 +1,81 @@
+name: Verificação
+run-name: Verificação periódica
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: registo
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Preparar o repositório
+        uses: actions/checkout@v4
+
+      - name: Verificar os apps publicados
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+
+          data = json.load(open("apps.json"))
+
+          def gh(*args):
+              p = subprocess.run(["gh", "api", *args], capture_output=True, text=True)
+              return p.returncode, p.stdout
+
+          keep, removed = [], []
+          for a in data["apps"]:
+              reason = None
+              code, out = gh(f"repos/{a['repo']}/commits/{a['tag']}", "--jq", ".sha")
+              if code != 0:
+                  reason = "a tag ou o repositório já não existe"
+              elif a.get("commit") and out.strip() != a["commit"]:
+                  reason = "o commit da tag mudou sem uma tag nova"
+              else:
+                  code, out = gh(f"repos/{a['repo']}/releases/tags/{a['tag']}")
+                  if code != 0:
+                      reason = "a release já não existe"
+                  else:
+                      assets = [x for x in json.loads(out)["assets"] if x["name"].endswith(".apk")]
+                      if not assets or (a.get("asset_id") and str(assets[0]["id"]) != str(a["asset_id"])):
+                          reason = "o APK da release foi alterado ou removido"
+              if reason is None:
+                  keep.append(a)
+              else:
+                  removed.append((a, reason))
+
+          if removed:
+              data["apps"] = keep
+              json.dump(data, open("apps.json", "w"), ensure_ascii=False, indent=2)
+              for a, reason in removed:
+                  subprocess.run([
+                      "gh", "issue", "create",
+                      "--title", f"Desativado: {a['name']}",
+                      "--body", f"O app {a['name']} ({a['repo']}, {a['tag']}) saiu do feed: {reason}.",
+                  ])
+          PY
+
+      - name: Desativar os apps alterados
+        run: |
+          if git diff --quiet apps.json; then
+            echo "Nenhum app foi alterado."
+            exit 0
+          fi
+          git config user.name "pixelloja-bot"
+          git config user.email "pixelloja-bot@users.noreply.github.com"
+          git add apps.json
+          git commit -m "Desativar apps alterados"
+          git pull --rebase origin main
+          git push origin HEAD:main
