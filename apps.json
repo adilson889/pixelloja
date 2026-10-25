@@ -16,6 +16,23 @@
       "c1": "#455A0A",
       "c2": "#A3B35C",
       "updated": "2026-10-25"
+    },
+    {
+      "id": "sire",
+      "name": "SIRE",
+      "desc": "App de gestão financeira pessoal",
+      "category": "Ferramentas",
+      "repo": "adilson889/SIRE",
+      "tag": "v5.2",
+      "commit": "4fbf59d5dfd0f02323df8d4e9838113485a32bf3",
+      "apk": "https://github.com/adilson889/SIRE/releases/download/v5.2/sire_v5.2_signed.apk",
+      "asset_id": "423166225",
+      "sha256": "c57c507955919855d91a542c369b1b61dbd85a3526efd43721d1449aa79992b1",
+      "cert": "a40da80a59d170caa950cf15c18c454d47a39b26989d8b640ecd745ba71bf5dc",
+      "owner": "adilson889",
+      "c1": "#5B2A86",
+      "c2": "#C77DFF",
+      "updated": "2026-10-25"
     }
   ]
 }
