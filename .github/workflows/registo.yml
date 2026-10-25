@@ -1,0 +1,269 @@
+name: Registo
+run-name: ${{ github.event.issue.title }}
+
+on:
+  issues:
+    types: [opened]
+
+concurrency:
+  group: registo
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  testar:
+    if: startsWith(github.event.issue.title, 'Registo: ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ISSUE_BODY: ${{ github.event.issue.body }}
+      ISSUE_USER: ${{ github.event.issue.user.login }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VT_API_KEY: ${{ secrets.VT_API_KEY }}
+    steps:
+      - name: Preparar o repositório
+        uses: actions/checkout@v4
+
+      - name: Ler o pedido
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              sys.exit(1)
+
+          fields = {}
+          for line in os.environ["ISSUE_BODY"].splitlines():
+              m = re.match(r"^(nome|link|categoria|descricao):\s*(.*)$", line.strip())
+              if m and m.group(1) not in fields:
+                  fields[m.group(1)] = m.group(2).strip()
+
+          for k in ("nome", "link", "categoria", "descricao"):
+              if not fields.get(k):
+                  fail(f"Campo em falta no pedido: {k}")
+
+          if len(fields["nome"]) > 40 or len(fields["descricao"]) > 200:
+              fail("Nome (até 40) ou descrição (até 200 caracteres) demasiado longos.")
+          if fields["categoria"] not in ("Jogos", "Ferramentas", "Educação", "Social", "Outros"):
+              fail("Categoria inválida.")
+
+          m = re.fullmatch(
+              r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/releases/tag/([A-Za-z0-9._+-]+)",
+              fields["link"],
+          )
+          if not m:
+              fail("O link tem de ser de uma release com tag.")
+          fields["owner"], fields["repo"], fields["tag"] = m.groups()
+
+          os.makedirs("/tmp/w", exist_ok=True)
+          json.dump(fields, open("/tmp/w/req.json", "w"), ensure_ascii=False)
+          PY
+
+      - name: Verificar o dono do repositório
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          r = json.load(open("/tmp/w/req.json"))
+          if r["owner"].lower() != os.environ["ISSUE_USER"].lower():
+              print("::error::O repositório não pertence a quem fez o pedido.")
+              sys.exit(1)
+          PY
+
+      - name: Validar a release e o APK
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          OWNER=$(jq -r .owner req.json)
+          REPO=$(jq -r .repo req.json)
+          TAG=$(jq -r .tag req.json)
+          gh api "repos/$OWNER/$REPO/releases/tags/$TAG" > release.json \
+            || { echo "::error::Release não encontrada (o repositório tem de ser público)."; exit 1; }
+          if [ "$(jq -r .draft release.json)" = "true" ]; then
+            echo "::error::A release é um rascunho."; exit 1
+          fi
+          APK_URL=$(jq -r '[.assets[] | select(.name | endswith(".apk"))][0].browser_download_url // empty' release.json)
+          ASSET_ID=$(jq -r '[.assets[] | select(.name | endswith(".apk"))][0].id // empty' release.json)
+          [ -n "$APK_URL" ] || { echo "::error::A release não tem ficheiro .apk."; exit 1; }
+          gh api "repos/$OWNER/$REPO/commits/$TAG" --jq .sha > commit.txt
+          curl -sSL --max-filesize 209715200 -o app.apk "$APK_URL"
+          sha256sum app.apk | cut -d' ' -f1 > sha.txt
+          echo "$APK_URL" > apk_url.txt
+          echo "$ASSET_ID" > asset_id.txt
+
+      - name: Verificar a assinatura do APK
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs app.apk > certs.txt \
+            || { echo "::error::O APK não está assinado corretamente."; exit 1; }
+          grep -m1 "certificate SHA-256 digest" certs.txt | awk '{print $NF}' > cert.txt
+          cd "$GITHUB_WORKSPACE"
+          python3 - <<'PY'
+          import json, sys
+          r = json.load(open("/tmp/w/req.json"))
+          cert = open("/tmp/w/cert.txt").read().strip()
+          repo = f"{r['owner']}/{r['repo']}".lower()
+          for a in json.load(open("apps.json"))["apps"]:
+              if a["repo"].lower() == repo and a.get("cert") and a["cert"] != cert:
+                  print("::error::A assinatura do APK mudou em relação à versão aprovada.")
+                  sys.exit(1)
+          PY
+
+      - name: Verificar as permissões do APK
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/aapt2" dump permissions app.apk | tee perms.txt
+          if grep -E "SEND_SMS|READ_SMS|RECEIVE_SMS|BIND_ACCESSIBILITY_SERVICE|BIND_DEVICE_ADMIN|READ_CALL_LOG|WRITE_CALL_LOG|PROCESS_OUTGOING_CALLS" perms.txt; then
+            echo "::error::O APK pede permissões não permitidas no hub."
+            exit 1
+          fi
+
+      - name: Obter o código da tag
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          OWNER=$(jq -r .owner req.json)
+          REPO=$(jq -r .repo req.json)
+          TAG=$(jq -r .tag req.json)
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 --branch "$TAG" "https://github.com/$OWNER/$REPO.git" src
+          if [ "$(git -C src rev-parse HEAD)" != "$(cat commit.txt)" ]; then
+            echo "::error::O código da tag não corresponde ao commit da release."
+            exit 1
+          fi
+
+      - name: Dependências (OSV-Scanner)
+        run: |
+          cd /tmp/w
+          curl -sSL -o osv https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_linux_amd64
+          chmod +x osv
+          set +e
+          ./osv scan source -r src
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            exit 0
+          elif [ "$code" -eq 128 ]; then
+            echo "::warning::Sem ficheiros de dependências analisáveis (o projeto devia ter um gradle.lockfile)."
+            exit 0
+          else
+            echo "::error::Há dependências com falhas conhecidas."
+            exit 1
+          fi
+
+      - name: Código Android (mobsfscan)
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          pip install --quiet mobsfscan
+          mobsfscan --json src > mobsf.json || true
+          N=$(jq '[.results[]? | select(.metadata.severity == "ERROR")] | length' mobsf.json)
+          echo "Problemas graves: $N"
+          if [ "$N" -gt 0 ]; then
+            jq -r '.results | to_entries[] | select(.value.metadata.severity == "ERROR") | .key' mobsf.json
+            echo "::error::O código tem problemas de segurança graves."
+            exit 1
+          fi
+
+      - name: Chaves expostas (Gitleaks)
+        run: |
+          docker run --rm -v /tmp/w/src:/repo zricethezav/gitleaks:latest detect --source /repo --no-git --redact
+
+      - name: Reputação do APK (VirusTotal)
+        run: |
+          set -euo pipefail
+          cd /tmp/w
+          if [ -z "${VT_API_KEY:-}" ]; then
+            echo "::warning::Sem chave do VirusTotal: passo ignorado."
+            exit 0
+          fi
+          SHA=$(cat sha.txt)
+          CODE=$(curl -s -o vt.json -w "%{http_code}" -H "x-apikey: $VT_API_KEY" "https://www.virustotal.com/api/v3/files/$SHA")
+          if [ "$CODE" = "404" ]; then
+            echo "::warning::O VirusTotal ainda não conhece este ficheiro."
+            exit 0
+          fi
+          if [ "$CODE" != "200" ]; then
+            echo "::warning::VirusTotal indisponível ($CODE)."
+            exit 0
+          fi
+          MAL=$(jq '.data.attributes.last_analysis_stats.malicious' vt.json)
+          if [ "$MAL" -gt 0 ]; then
+            echo "::error::O VirusTotal marcou o APK como malicioso ($MAL motores)."
+            exit 1
+          fi
+
+      - name: Aprovar e publicar
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, re
+
+          w = "/tmp/w/"
+          r = json.load(open(w + "req.json"))
+          read = lambda n: open(w + n).read().strip()
+
+          pairs = [("#455A0A", "#A3B35C"), ("#5B2A86", "#C77DFF"), ("#0B5563", "#5CC8D7"),
+                   ("#7A1F1F", "#E07A5F"), ("#6B4E0A", "#E9C46A")]
+          sha = read("sha.txt")
+          c1, c2 = pairs[int(sha[:4], 16) % len(pairs)]
+
+          path = os.path.join(os.environ["GITHUB_WORKSPACE"], "apps.json")
+          data = json.load(open(path))
+          repo = f"{r['owner']}/{r['repo']}"
+
+          slug = re.sub(r"[^a-z0-9]+", "-", r["nome"].lower()).strip("-") or "app"
+          same = [a for a in data["apps"] if a["repo"].lower() == repo.lower()]
+          if same:
+              slug = same[0]["id"]
+              c1, c2 = same[0].get("c1", c1), same[0].get("c2", c2)
+          elif any(a["id"] == slug for a in data["apps"]):
+              slug = f"{slug}-{r['owner'].lower()}"
+
+          entry = {
+              "id": slug,
+              "name": r["nome"],
+              "desc": r["descricao"],
+              "category": r["categoria"],
+              "repo": repo,
+              "tag": r["tag"],
+              "commit": read("commit.txt"),
+              "apk": read("apk_url.txt"),
+              "asset_id": read("asset_id.txt"),
+              "sha256": sha,
+              "cert": read("cert.txt"),
+              "owner": r["owner"],
+              "c1": c1,
+              "c2": c2,
+              "updated": datetime.date.today().isoformat(),
+          }
+          data["apps"] = [a for a in data["apps"] if a["repo"].lower() != repo.lower()] + [entry]
+          json.dump(data, open(path, "w"), ensure_ascii=False, indent=2)
+          PY
+          git config user.name "pixelloja-bot"
+          git config user.email "pixelloja-bot@users.noreply.github.com"
+          git add apps.json
+          git commit -m "Publicar: $(jq -r .nome /tmp/w/req.json)"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Responder no pedido
+        if: always()
+        run: |
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh label create registo --color 455A0A 2>/dev/null || true
+          gh issue edit "$ISSUE_NUMBER" --add-label registo || true
+          if [ "${{ job.status }}" = "success" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "Aprovado e publicado. O app já aparece no feed. Registo: $RUN"
+            gh issue close "$ISSUE_NUMBER"
+          else
+            gh issue comment "$ISSUE_NUMBER" --body "Reprovado. Vê o registo: $RUN. Corrige o problema e cria uma tag nova."
+            gh issue close "$ISSUE_NUMBER" --reason "not planned"
+          fi
