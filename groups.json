@@ -1,0 +1,11 @@
+{
+  "groups": [
+    {
+      "id": "geral",
+      "name": "Geral",
+      "desc": "Conversa livre sobre os apps do hub.",
+      "c1": "#455A0A",
+      "c2": "#A0B35A"
+    }
+  ]
+}
