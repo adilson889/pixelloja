@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "id": "layoutnativos",
+      "name": "layoutnativos",
+      "lang": "Kotlin",
+      "type": "lib",
+      "version": "v1.0.0",
+      "desc": "Layouts nativos Android em HTML/CSS, sem XML nem Compose.",
+      "install": "implementation(\"co.adilson889:layoutnativos:1.0.0\")",
+      "repo": "adilson889/layoutnativos",
+      "author": "adilson889"
+    },
+    {
+      "id": "kotlin-base",
+      "name": "Base Android Kotlin",
+      "lang": "Kotlin",
+      "type": "template",
+      "version": "v1.0",
+      "desc": "Projeto inicial com Activity, tema e build.gradle.kts prontos.",
+      "install": "",
+      "repo": "adilson889/base-android",
+      "author": "adilson889"
+    },
+    {
+      "id": "py-requests-snip",
+      "name": "GET com timeout",
+      "lang": "Python",
+      "type": "snippet",
+      "version": "v1",
+      "desc": "Pedido HTTP com timeout e tratamento de erro em 6 linhas.",
+      "install": "",
+      "repo": "",
+      "author": "adilson889"
+    },
+    {
+      "id": "js-debounce",
+      "name": "debounce",
+      "lang": "JavaScript",
+      "type": "snippet",
+      "version": "v1",
+      "desc": "Atrasa chamadas repetidas, ideal para pesquisa ao escrever.",
+      "install": "",
+      "repo": "",
+      "author": "adilson889"
+    }
+  ]
+}
