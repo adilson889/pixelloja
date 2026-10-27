@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": "q1",
+      "title": "first() rebenta com lista vazia",
+      "lang": "kt",
+      "state": "open",
+      "author": "adilson889",
+      "at": "2026-10-27T06:40:00",
+      "answers": 0,
+      "code": "val itens = listOf<String>()\nval primeiro = itens.first()\nprintln(primeiro)"
+    },
+    {
+      "id": "q2",
+      "title": "Média dá erro quando não há notas",
+      "lang": "py",
+      "state": "open",
+      "author": "adilson889",
+      "at": "2026-10-27T05:10:00",
+      "answers": 2,
+      "code": "def media(xs):\n    return sum(xs) / len(xs)\n\nprint(media([]))"
+    },
+    {
+      "id": "q3",
+      "title": "Debounce corre a função logo",
+      "lang": "js",
+      "state": "fixed",
+      "author": "adilson889",
+      "at": "2026-10-26T21:30:00",
+      "answers": 1,
+      "code": "function debounce(fn, ms) {\n  setTimeout(fn(), ms)\n}"
+    },
+    {
+      "id": "q4",
+      "title": "A lista guarda valores de chamadas antigas",
+      "lang": "py",
+      "state": "fixed",
+      "author": "adilson889",
+      "at": "2026-10-24T12:00:00",
+      "answers": 3,
+      "code": "def add(x, lista=[]):\n    lista.append(x)\n    return lista"
+    }
+  ]
+}
